@@ -18,7 +18,7 @@ from rapidfuzz import fuzz, process
 from scipy.optimize import linear_sum_assignment
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from src.normalize import clean_name, model_tokens
+from app.core.normalize import clean_name, model_tokens
 
 W_BRAND, W_NAME, W_TEXT, W_SPEC = 0.30, 0.35, 0.15, 0.20
 EQUIVALENT_SORT_SIM = 0.92   # near-identical names (order-insensitive)

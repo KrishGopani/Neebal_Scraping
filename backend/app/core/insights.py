@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src import analytics as an
+from app.core import analytics as an
 
 
 def build_insights(ours: pd.DataFrame, comps: pd.DataFrame, pairs: pd.DataFrame, cats: pd.DataFrame,
@@ -46,10 +46,10 @@ def build_insights(ours: pd.DataFrame, comps: pd.DataFrame, pairs: pd.DataFrame,
         if k["n"] < 20:
             out.append({"tone": "info", "title": "Small matched sample",
                         "body": (f"Only {k['n']} pairs ({k['n_equivalent']} exact-model) — product-level conclusions are "
-                                 f"directional. The *Market Position* analysis uses every product, not just matches.")})
+                                 f"directional. The *Categories & Brands* and *Market benchmark* views use every product, not just matches.")})
     else:
         out.append({"tone": "warn", "title": "No product matches at current settings",
-                    "body": "Lower the minimum match score or enable more match types in the sidebar."})
+                    "body": "Lower the minimum match score or enable more match types in Filters."})
 
     both = cats[cats.coverage == "Both"].dropna(subset=["median_gap_pct"])
     if len(both):
@@ -75,5 +75,5 @@ def build_insights(ours: pd.DataFrame, comps: pd.DataFrame, pairs: pd.DataFrame,
         out.append({"tone": "info", "title": f"{comp_name} discounting",
                     "body": (f"{len(disc) / len(comps) * 100:.0f}% of competitor products carry a listed discount "
                              f"(avg {disc.discount_pct.mean():.1f}%, max {disc.discount_pct.max():.0f}%). "
-                             f"Toggle *post-discount prices* in the sidebar to see the effective gap.")})
+                             f"Enable *post-discount prices* in Filters to see the effective gap.")})
     return out

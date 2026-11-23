@@ -9,8 +9,8 @@ from urllib.parse import urlparse
 
 import requests
 
-from src import config
-from src.normalize import extract_specs, resolve_brand, unify_category
+from app import config
+from app.core.normalize import extract_specs, resolve_brand, unify_category
 
 ProgressCb = Optional[Callable[[str, float], None]]
 

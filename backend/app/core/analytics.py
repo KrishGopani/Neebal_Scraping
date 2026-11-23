@@ -201,10 +201,13 @@ def price_bands(df: pd.DataFrame, bins=(0, 50, 150, 400, 1000, 2500, np.inf)) ->
 
 # ---------------------------------------------------------------- history
 def category_trend(history: pd.DataFrame) -> pd.DataFrame:
+    """Median price per (snapshot, store, category). Rows carry per-product timestamps, so group by
+    snapshot_id and give each snapshot a single time (its earliest product timestamp)."""
     if history.empty:
         return history
-    return (history.groupby(["snapshot_id", "scraped_at", "source", "category"]).price
-            .median().rename("median_price").reset_index())
+    t = history.groupby("snapshot_id").scraped_at.min().rename("scraped_at")
+    out = (history.groupby(["snapshot_id", "source", "category"]).price.median().rename("median_price").reset_index())
+    return out.merge(t, on="snapshot_id")[["snapshot_id", "scraped_at", "source", "category", "median_price"]]
 
 
 def price_changes(history: pd.DataFrame) -> pd.DataFrame:

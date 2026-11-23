@@ -1,7 +1,7 @@
 """Central configuration for the Price Intelligence platform."""
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent   # backend/
 DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "pricewatch.db"
 

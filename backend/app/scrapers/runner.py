@@ -1,9 +1,9 @@
-"""Run all scrapers and persist a snapshot.  CLI:  python -m src.scrapers.runner"""
+"""Run all scrapers and persist a snapshot.  CLI:  python -m app.scrapers.runner"""
 from __future__ import annotations
 
 import pandas as pd
 
-from src import config, storage
+from app import config, storage
 from .base import ProgressCb
 from .dummyjson import DummyJsonStore
 from .webscraper_io import WebScraperStore

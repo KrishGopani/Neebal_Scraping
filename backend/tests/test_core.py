@@ -1,8 +1,8 @@
 import pandas as pd
 
-from src import analytics as an
-from src.matching import compute_matches
-from src.normalize import brand_from_name, extract_specs, unify_category, resolve_brand
+from app.core import analytics as an
+from app.core.matching import compute_matches
+from app.core.normalize import brand_from_name, extract_specs, unify_category, resolve_brand
 
 
 def test_brand_aliases():

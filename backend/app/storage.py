@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from src import config
+from app import config
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
