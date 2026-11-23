@@ -4,6 +4,10 @@
 > "the same thing" in both, and shows a business user — in an interactive dashboard — where they are cheaper,
 > where they are more expensive, by how much, and what to do about it.
 
+<p align="center">
+  <img src="docs/screenshots/01-overview.png" alt="PriceIQ Overview dashboard: price index gauge, who-is-cheaper donut, category price gaps and business insights" width="900">
+</p>
+
 **Contents**
 1. [What problem does this solve?](#1-what-problem-does-this-solve)
 2. [What you see in the app](#2-what-you-see-in-the-app)
@@ -67,6 +71,37 @@ The dashboard has a left sidebar with 8 pages, and a **Filters** drawer + **Run 
 *Match reliability* (all / medium+high / high only), *compare post-discount prices*, *price tolerance* (what counts as "at par"),
 and *category selection*. A dark/light theme toggle sits next to it.
 
+### Screenshots
+
+> Captured from the real running app on the demo data (see [section 3](#3-where-the-data-comes-from-and-an-honest-warning) for why the numbers are synthetic).
+
+**Overview** — headline KPIs, the price-index gauge and plain-English insights.
+![Overview](docs/screenshots/01-overview.png)
+
+**Product Matches** — every matched pair, sortable and filterable…
+![Product Matches](docs/screenshots/02-product-matches.png)
+
+…and clicking a row opens a **side-by-side** comparison of the two products.
+![Side-by-side comparison](docs/screenshots/03-side-by-side.png)
+
+**Price Comparison** — price-vs-price scatter and the per-pair price ladder.
+![Price Comparison](docs/screenshots/04-price-comparison.png)
+
+**Categories & Brands** — typical price and % gap per category across the whole catalogue.
+![Categories and Brands](docs/screenshots/05-categories-brands.png)
+
+**Gaps & Actions** — biggest gaps, pricing recommendations with adjustable policy sliders, and a market benchmark.
+![Gaps and Actions](docs/screenshots/06-gaps-and-actions.png)
+
+**Market & Trends** — price history across scrapes, competitor discounting and assortment structure.
+![Market and Trends](docs/screenshots/07-market-trends.png)
+
+**Filters** — only business-level choices; dark mode is one click away.
+
+| Filters drawer | Dark mode |
+|---|---|
+| ![Filters](docs/screenshots/08-filters.png) | ![Dark mode](docs/screenshots/09-dark-mode.png) |
+
 ---
 
 ## 3. Where the data comes from (and an honest warning)
@@ -119,26 +154,90 @@ Every scrape is saved as a new **snapshot**, so the more often you scrape, the r
 
 ## 5. How it works, end to end
 
+The system has five stages. The first picture is the big picture; the two below zoom in on the two things that actually happen —
+**collecting** data (when a scrape runs) and **viewing** it (every time someone opens a page or changes a filter).
+
+**The big picture**
+
+```mermaid
+flowchart LR
+    classDef step fill:#eff6ff,stroke:#2563eb,color:#0f172a
+    classDef store fill:#fef3c7,stroke:#d97706,color:#0f172a
+    classDef ext fill:#f1f5f9,stroke:#94a3b8,color:#0f172a
+    classDef user fill:#0f172a,stroke:#0f172a,color:#ffffff
+
+    SRC["Two online stores<br/>HTML pages + JSON API"]:::ext
+    COLLECT["1 · Collect<br/>backend/app/scrapers"]:::step
+    STORE[("2 · Store<br/>SQLite snapshots")]:::store
+    ANALYSE["3 · Analyse<br/>backend/app/core<br/>match, compute, explain"]:::step
+    SERVE["4 · Serve<br/>FastAPI JSON API"]:::step
+    DISPLAY["5 · Display<br/>React dashboard"]:::step
+    USER(("Business<br/>user")):::user
+
+    SRC --> COLLECT --> STORE --> ANALYSE --> SERVE --> DISPLAY --> USER
 ```
- ┌──────────────────────────── BACKEND (Python / FastAPI) ─────────────────────────────┐
- │                                                                                     │
- │  1 SCRAPE            2 STORE              3 ANALYSE (app/core)           4 SERVE     │
- │  scrapers/           storage.py           pipeline.py orchestrates:      api/        │
- │  ┌──────────────┐    ┌───────────────┐    normalize → match →            routes.py   │
- │  │ webscraper.io│──┐ │ SQLite        │    analytics → insights                      │
- │  │ (HTML)       │  ├►│ snapshots +   │──► (all pure pandas functions) ──► JSON ──────┼──┐
- │  │ dummyjson    │──┘ │ products      │                                              │  │
- │  │ (JSON API)   │    └───────────────┘                                              │  │
- │  └──────────────┘                                                                   │  │
- └─────────────────────────────────────────────────────────────────────────────────────┘  │
-                                                                                          │ HTTP /api/*
- ┌──────────────────────────── FRONTEND (React / TypeScript) ──────────────────────────┐  │
- │  Filters (settings.tsx) ─► react-query fetches /api/analysis ◄─────────────────────────┼──┘
- │                              │                                                       │
- │                              ▼   shared via AnalysisCtx                              │
- │   Overview · Matches · Pricing · Categories · Actions · Quality · Market · Catalogue │
- │   (tables = DataTable, charts = ECharts via Chart.tsx, side panels = Drawer)         │
- └──────────────────────────────────────────────────────────────────────────────────────┘
+
+**Flow A — collecting data** (runs when you click *Run scrape* or run `make scrape`)
+
+```mermaid
+flowchart TB
+    classDef step fill:#eff6ff,stroke:#2563eb,color:#0f172a
+    classDef store fill:#fef3c7,stroke:#d97706,color:#0f172a
+    classDef bad fill:#fef2f2,stroke:#dc2626,color:#0f172a
+    classDef trig fill:#0f172a,stroke:#0f172a,color:#ffffff
+
+    T1(["User clicks<br/>Run scrape"]):::trig --> JOB["api/jobs.py<br/>background thread<br/>only one scrape at a time"]:::step
+    T2(["or: make scrape<br/>(command line)"]):::trig --> RUN
+    JOB --> RUN["scrapers/runner.py<br/>run_all()"]:::step
+    RUN --> S1["webscraper_io.py<br/>parse HTML pages"]:::step
+    RUN --> S2["dummyjson.py<br/>read JSON API"]:::step
+    S1 --> HTTP["scrapers/base.py<br/>check robots.txt, wait between requests,<br/>retry on errors"]:::step
+    S2 --> HTTP
+    HTTP --> REC["make_record()<br/>one standard product shape:<br/>clean brand, unify category, parse specs<br/>(core/normalize.py)"]:::step
+    REC --> OK{"Did both stores<br/>succeed?"}
+    OK -- "yes" --> SAVE[("storage.save_snapshot()<br/>new immutable snapshot in SQLite")]:::store
+    OK -- "no" --> KEEP["Keep the previous data<br/>and show the error"]:::bad
+    SAVE --> CLR["Clear analysis caches<br/>so the next request uses the new snapshot"]:::step
+```
+
+**Flow B — viewing data** (runs on every page load or filter change)
+
+```mermaid
+flowchart TB
+    classDef web fill:#ecfdf5,stroke:#16a34a,color:#0f172a
+    classDef py fill:#eff6ff,stroke:#2563eb,color:#0f172a
+    classDef store fill:#fef3c7,stroke:#d97706,color:#0f172a
+    classDef user fill:#0f172a,stroke:#0f172a,color:#ffffff
+
+    subgraph ASK["1 · In the browser — ask"]
+        direction TB
+        U(["User opens a page<br/>or changes a filter"]):::user
+        F["lib/settings.tsx<br/>filters, saved in localStorage"]:::web
+        Q["lib/queries.ts<br/>React Query sends the request"]:::web
+        U --> F --> Q
+    end
+
+    subgraph SERVER["2 · On the server — FastAPI + analysis core"]
+        direction TB
+        R["api/routes.py<br/>validate the filters"]:::py
+        P["core/pipeline.py<br/>orchestrates the steps below"]:::py
+        L[("storage.py<br/>load the snapshot")]:::store
+        M["core/matching.py<br/>pair equivalent products (cached)"]:::py
+        A["core/analytics.py<br/>gaps, price index, categories,<br/>benchmark, recommendations, trends"]:::py
+        I["core/insights.py<br/>write plain-English findings"]:::py
+        J["Bundle everything as JSON<br/>(NaN becomes null)"]:::py
+        R --> P --> L --> M --> A --> I --> J
+    end
+
+    subgraph SHOWN["3 · In the browser — show"]
+        direction TB
+        PG["pages/*.tsx<br/>tables, ECharts charts, drawers"]:::web
+        U2(["User sees the answer"]):::user
+        PG --> U2
+    end
+
+    Q -->|"GET /api/analysis?filters"| R
+    J -->|"JSON response"| PG
 ```
 
 **Step by step**
@@ -191,6 +290,7 @@ Neebal_Scraping/
 ├── README.md                     ← you are here
 ├── Makefile                      ← one-word shortcuts: install, scrape, api, web, build, test
 ├── .gitignore                    ← keeps venv, node_modules, build output and the local DB out of git
+├── docs/screenshots/             ← the PNG screenshots shown in this README
 ├── backend/                      ← Python: scraping, analysis, HTTP API
 │   ├── requirements.txt
 │   ├── data/pricewatch.db        ← SQLite database created by the first scrape (git-ignored)
@@ -217,6 +317,7 @@ Neebal_Scraping/
 |---|---|
 | `README.md` | This documentation. |
 | `Makefile` | Shortcuts so you don't have to remember long commands: `make install`, `scrape`, `api`, `web`, `build`, `test`. |
+| `docs/screenshots/` | PNG screenshots of the running app used in this README (regenerate by re-capturing the pages). |
 | `.gitignore` | Excludes `backend/.venv/`, `frontend/node_modules/`, `frontend/dist/`, `backend/data/*.db`, caches, logs. |
 
 ### 7.2 Backend — `backend/app/`
@@ -322,6 +423,24 @@ Neebal_Scraping/
 
 Goal: for each of your products, find the same or most similar competitor product — **without using price**.
 
+```mermaid
+flowchart TD
+    IN["Your products + competitor products<br/>(one snapshot)"] --> DEDUP["Collapse duplicate listings<br/>same name + price, e.g. colour variants"]
+    DEDUP --> GATE{"Same unified<br/>category?"}
+    GATE -- "no" --> DROP1["Never compared"]
+    GATE -- "yes" --> SCORE["Score every candidate pair, 0 to 100"]
+    SCORE --> W["Brand 30% · Name 35%<br/>Text (TF-IDF) 15% · Specs 20%<br/>Price is NOT used"]
+    W --> MIN{"Score at or above<br/>min score? (default 55)"}
+    MIN -- "no" --> DROP2["Discard"]
+    MIN -- "yes" --> TYPE["Label the match type<br/>Equivalent · Close Match · Comparable"]
+    TYPE --> HUN["One-to-one assignment<br/>(Hungarian algorithm)"]
+    HUN --> RATIO{"Prices within 5x<br/>of each other?"}
+    RATIO -- "no" --> DROP3["Drop: different product class"]
+    RATIO -- "yes" --> OUT["Matched pair + confidence<br/>High · Medium · Low"]
+```
+
+The same steps in words:
+
 1. **Pre-clean.** Products listed several times with identical name + price (colour variants such as three "Iphone" rows)
    are collapsed to one representative so they are not paired with three different competitor items.
 2. **Category gate.** A product can only match products in the same unified category (laptops with laptops …).
@@ -356,6 +475,21 @@ On *Gaps & Actions*, each matched pair gets one suggested action (decision suppo
 | Gap > +threshold (no rating advantage) | **Reduce price** towards ≈ 5 % above the competitor |
 | Gap < −threshold | **Raise price** towards (competitor − undercut margin) |
 | Otherwise | **Monitor** |
+
+```mermaid
+flowchart TD
+    P["Matched pair<br/>gap = (your price - competitor) / competitor"] --> C1{"Confidence is Low and<br/>gap beyond the threshold?"}
+    C1 -- "yes" --> R1["Manual review"]
+    C1 -- "no" --> C2{"gap above +threshold?"}
+    C2 -- "yes" --> C3{"You are rated at least<br/>0.5 stars higher?"}
+    C3 -- "yes" --> R2["Hold: premium justified"]
+    C3 -- "no" --> R3["Reduce price<br/>toward about 5% above competitor"]
+    C2 -- "no" --> C4{"gap below -threshold?"}
+    C4 -- "yes" --> R4["Raise price<br/>toward competitor minus undercut margin"]
+    C4 -- "no" --> R5["Monitor"]
+    R3 --> CAP["Cap the move at max step % per cycle"]
+    R4 --> CAP
+```
 
 Three sliders control the policy: *act when gap exceeds* (default 10 %), *undercut by* (3 %), and *max move per cycle* (15 % — suggested
 prices never move more than this in one step).
