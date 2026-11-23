@@ -1,3 +1,8 @@
+"""Unit tests for the analysis core: normalisation, matching and the price-gap maths.
+
+Role: fast, database-free tests of the logic that decides what the numbers mean. They build tiny hand-made product
+tables (see _frame) so every expected result can be reasoned about by hand. Run with `pytest` from backend/.
+"""
 import pandas as pd
 
 from app.core import analytics as an
@@ -6,6 +11,7 @@ from app.core.normalize import brand_from_name, extract_specs, unify_category, r
 
 
 def test_brand_aliases():
+    """Product lines/sub-brands resolve to their parent brand, and brand spelling is canonicalised."""
     assert brand_from_name("Galaxy Tab 3") == "Samsung"
     assert brand_from_name("ThinkPad T540p") == "Lenovo"
     assert brand_from_name("Hewlett Packard 250") == "HP"
@@ -14,23 +20,27 @@ def test_brand_aliases():
 
 
 def test_specs_depend_on_category():
+    """Spec parsing is category-aware: a lone "16GB" is storage on a tablet, not RAM."""
     assert extract_specs('15.6", Core i5, 8GB, 256GB', "Laptops") == {"screen_in": 15.6, "ram_gb": 8.0, "storage_gb": 256.0, "cpu": "Core I5"}
     assert extract_specs("7\" screen, 16GB", "Tablets")["storage_gb"] == 16.0
     assert extract_specs("7\" screen, 16GB", "Tablets")["ram_gb"] is None
 
 
 def test_category_mapping():
+    """Each store's raw category maps onto the shared taxonomy (so cross-store matching can compare like with like)."""
     assert unify_category("mens-watches") == ("Watches", "Fashion")
     assert unify_category("computers/laptops")[0] == "Laptops"
 
 
 def _frame(rows):
+    """Build a minimal product DataFrame: caller gives the interesting fields, defaults fill in the rest."""
     base = dict(description="", rating=4.0, review_count=1, discount_pct=0.0, screen_in=None, ram_gb=None,
                 storage_gb=None, cpu=None, image_url="", url="", availability="In Stock")
     return pd.DataFrame([{**base, **r} for r in rows])
 
 
 def test_matching_respects_category_and_brand():
+    """Identical-model laptops match as Equivalent; a blender never matches anything because the categories differ."""
     ours = _frame([
         dict(product_id="1", name="Dell XPS 13", brand="Dell", category="Laptops", price=1000.0),
         dict(product_id="2", name="Acme Blender", brand="Acme", category="Home & Living", price=50.0),
@@ -45,6 +55,7 @@ def test_matching_respects_category_and_brand():
 
 
 def test_pair_metrics_and_index():
+    """900 vs 1000 -> gap -10%, labelled Cheaper, price index 90 -> "Price leader" (index = our/competitor x 100)."""
     ours = _frame([dict(product_id="1", name="Dell XPS 13", brand="Dell", category="Laptops", price=900.0)])
     comps = _frame([dict(product_id="a", name="Dell XPS 13", brand="Dell", category="Laptops", price=1000.0)])
     pairs = an.build_pairs(compute_matches(ours, comps, 40), ours, comps)
@@ -55,6 +66,7 @@ def test_pair_metrics_and_index():
 
 
 def test_max_ratio_drops_implausible_pairs():
+    """A 9x price difference is treated as a different product class: dropped at max_ratio=5, kept when uncapped."""
     ours = _frame([dict(product_id="1", name="Galaxy Tab", brand="Samsung", category="Tablets", price=100.0)])
     comps = _frame([dict(product_id="a", name="Samsung Galaxy Tab S8", brand="Samsung", category="Tablets", price=900.0)])
     m = compute_matches(ours, comps, 40)

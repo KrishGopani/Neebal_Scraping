@@ -1,12 +1,21 @@
-"""Normalisation helpers: brands, unified categories, spec extraction, name cleaning."""
+"""Normalisation helpers: brands, unified categories, spec extraction, name cleaning.
+
+Role: two stores describe the same thing in different words ("Galaxy Tab" vs "Samsung Galaxy Tab S8", category
+"computers/laptops" vs "laptops"). Before products can be compared, their messy raw fields are converted into one
+shared vocabulary here. This is pure text processing - no network, no database, no pandas.
+
+Used by: app.scrapers.base (cleans each record as it is scraped) and app.core.matching (name cleaning and model
+tokens for similarity scoring).
+"""
 from __future__ import annotations
 
 import re
 
-# Canonical display form for brands whose .title() would be wrong.
+# Canonical display form for brands whose .title() would be wrong (e.g. "hp".title() -> "Hp", but it is "HP").
 _CANONICAL = {"hp": "HP", "lg": "LG", "msi": "MSI", "asus": "Asus", "ibm": "IBM", "oppo": "Oppo"}
 
-# Sub-brands / product lines -> parent brand (matched on name tokens).
+# Sub-brands / product lines -> parent brand (matched on name tokens). Needed because a product name often shows only
+# the line ("Galaxy Tab", "ThinkPad") and never the company, yet matching requires both sides to agree on the brand.
 _ALIASES = {
     "galaxy": "Samsung", "iphone": "Apple", "ipad": "Apple", "macbook": "Apple", "imac": "Apple",
     "thinkpad": "Lenovo", "ideatab": "Lenovo", "ideapad": "Lenovo", "yoga": "Lenovo", "ideacentre": "Lenovo",
@@ -17,12 +26,14 @@ _ALIASES = {
     "packard": "Packard Bell", "xperia": "Sony", "vaio": "Sony", "optimus": "LG",
     "kindle": "Amazon", "ubuntu": "Canonical", "matebook": "Huawei", "surface": "Microsoft",
 }
+# Brand names we recognise directly when they appear as one of the first words of a product name.
 _KNOWN = {
     "acer", "asus", "lenovo", "dell", "msi", "toshiba", "apple", "hp", "prestigio", "nokia", "amazon",
     "lg", "samsung", "sony", "huawei", "oppo", "realme", "vivo", "microsoft", "google", "xiaomi", "htc",
 }
 
-# raw category -> (unified category, department)
+# raw category -> (unified category, department). Matching only compares products inside the same unified category,
+# so e.g. both stores' laptops must land on "Laptops". Unlisted categories fall back to a prettified raw name.
 _CATEGORY_MAP = {
     "laptops": ("Laptops", "Electronics"),
     "tablets": ("Tablets", "Electronics"),
@@ -48,6 +59,7 @@ _CATEGORY_MAP = {
 
 
 def canonical_brand(brand: str | None) -> str | None:
+    """Tidy a brand string to one consistent spelling ("ASUS"/"asus" -> "Asus", "hp" -> "HP"); None if blank."""
     if not brand or not str(brand).strip():
         return None
     b = str(brand).strip()
@@ -55,6 +67,10 @@ def canonical_brand(brand: str | None) -> str | None:
 
 
 def brand_from_name(name: str) -> str:
+    """Guess the brand from a product name: look at the first 3 words for a known brand or a sub-brand alias.
+
+    Falls back to the first word (usually the brand anyway), or "Unknown" for an empty name.
+    """
     tokens = re.findall(r"[A-Za-z0-9]+", name.lower())
     for t in tokens[:3]:
         if t in _KNOWN:
@@ -65,6 +81,7 @@ def brand_from_name(name: str) -> str:
 
 
 def resolve_brand(brand: str | None, name: str) -> str:
+    """Final brand for a product: the site-provided brand if any (alias-resolved), else inferred from the name."""
     b = canonical_brand(brand)
     if b:
         low = b.lower()
@@ -73,10 +90,15 @@ def resolve_brand(brand: str | None, name: str) -> str:
 
 
 def unify_category(raw: str) -> tuple[str, str]:
+    """Map a store's raw category to (unified category, broader department).
+
+    Example: "mens-watches" -> ("Watches", "Fashion").
+    """
     return _CATEGORY_MAP.get(raw, (raw.replace("-", " ").replace("/", " ").title(), "Other"))
 
 
 # --- spec extraction -------------------------------------------------------
+# Regexes for pulling hardware specs out of free text. Each requires a unit marker so bare numbers are not misread.
 _SCREEN = re.compile(r"(\d{1,2}(?:\.\d{1,2})?)\s*-?\s*(?:\"|''|”|inch(?:es)?\b)", re.I)
 _GB = re.compile(r"(\d+(?:\.\d+)?)\s*(GB|TB)\b", re.I)
 _CPU = re.compile(
@@ -88,13 +110,17 @@ def extract_specs(text: str, category: str | None = None) -> dict:
     """Best-effort spec parsing from free-text descriptions. Missing -> None.
 
     A lone "8GB" is RAM on a laptop but storage on a tablet/phone, hence the category hint.
+    Returns {"screen_in", "ram_gb", "storage_gb", "cpu"}; these feed the spec-compatibility part of matching.
     """
     text = text or ""
     screen = None
     m = _SCREEN.search(text)
+    # Sanity range: ignore numbers that cannot be a device screen (e.g. "21 inch" monitors or stray digits).
     if m and 3 <= float(m.group(1)) <= 20:
         screen = float(m.group(1))
 
+    # Collect every GB/TB figure (TB converted to GB). With two or more, the smallest is RAM and the largest is
+    # storage ("4GB, 500GB"); with exactly one it depends on the device type (see docstring).
     sizes = sorted({float(v) * (1000 if u.upper() == "TB" else 1) for v, u in _GB.findall(text)})
     ram = storage = None
     if len(sizes) >= 2:
@@ -114,6 +140,11 @@ def extract_specs(text: str, category: str | None = None) -> dict:
 
 # --- name cleaning ---------------------------------------------------------
 def clean_name(name: str, brand: str | None = None) -> str:
+    """Lower-case a name, drop punctuation and (if given) the brand words, leaving just the model description.
+
+    Removing the brand matters: otherwise "Dell" in both names would inflate the fuzzy-similarity score even
+    for different models. Brand agreement is scored separately in matching.
+    """
     s = re.sub(r"[^a-z0-9 ]+", " ", (name or "").lower())
     if brand:
         for part in brand.lower().split():
@@ -122,7 +153,11 @@ def clean_name(name: str, brand: str | None = None) -> str:
 
 
 def model_tokens(cleaned: str) -> set[str]:
-    """Distinctive model identifiers: tokens mixing letters+digits, or numbers >= 2 digits."""
+    """Distinctive model identifiers: tokens mixing letters+digits, or numbers >= 2 digits.
+
+    Examples: "x441na", "5s", "13", "9300". A shared model token (same brand) is the strongest sign that two
+    listings are the very same model, which is how "Equivalent" matches are recognised.
+    """
     out = set()
     for t in cleaned.split():
         if re.search(r"\d", t) and (re.search(r"[a-z]", t) or len(t) >= 2):

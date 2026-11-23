@@ -1,4 +1,12 @@
-"""SQLite persistence. Every scrape run is stored as an immutable snapshot => price history."""
+"""SQLite persistence. Every scrape run is stored as an immutable snapshot => price history.
+
+Role: the only module that touches the database. A "snapshot" is one complete scrape of every store: one row in
+`snapshots` plus ~N rows in `products` tagged with that snapshot_id. Snapshots are never updated or deleted, so
+comparing two snapshots gives price changes over time (the Market & Trends page).
+
+Used by: app.scrapers.runner (save_snapshot after a successful scrape) and app.core.pipeline / app.api.routes
+(read helpers). SQLite needs no server - the whole database is the file at config.DB_PATH.
+"""
 from __future__ import annotations
 
 import sqlite3
@@ -9,6 +17,8 @@ import pandas as pd
 
 from app import config
 
+# Created on every connection (IF NOT EXISTS makes this a no-op after the first time), so a fresh checkout works
+# without any setup step. The `products` columns mirror config.COLUMNS plus snapshot_id.
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
     snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_products_snap ON products(snapshot_id, source);
 
 
 def _connect() -> sqlite3.Connection:
+    """Open the database (creating the data folder and tables if needed). Callers close it via `closing(...)`."""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(config.DB_PATH)
     con.executescript(_SCHEMA)
@@ -35,6 +46,11 @@ def _connect() -> sqlite3.Connection:
 
 
 def save_snapshot(df: pd.DataFrame) -> int:
+    """Store one full scrape as a new snapshot and return its id.
+
+    `df` holds the products of all stores. The snapshot row is created first so its auto-increment id can be
+    stamped onto every product row; reindexing to config.COLUMNS guarantees a stable column order/shape.
+    """
     with closing(_connect()) as con:
         cur = con.execute("INSERT INTO snapshots (scraped_at, n_products) VALUES (?, ?)",
                           (datetime.now(timezone.utc).isoformat(timespec="seconds"), len(df)))
@@ -47,6 +63,7 @@ def save_snapshot(df: pd.DataFrame) -> int:
 
 
 def list_snapshots() -> pd.DataFrame:
+    """All snapshots (id, scrape time, product count), oldest first."""
     with closing(_connect()) as con:
         return pd.read_sql("SELECT * FROM snapshots ORDER BY snapshot_id", con)
 
@@ -63,5 +80,6 @@ def load_snapshot(snapshot_id: int | None = None) -> pd.DataFrame:
 
 
 def load_history() -> pd.DataFrame:
+    """Every product row of every snapshot - the raw material for price-trend charts."""
     with closing(_connect()) as con:
         return pd.read_sql("SELECT * FROM products ORDER BY snapshot_id", con)

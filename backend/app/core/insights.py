@@ -1,4 +1,12 @@
-"""Turns analytics into plain-language business insights."""
+"""Turns analytics into plain-language business insights.
+
+Role: the "so what?" layer. app.core.analytics produces numbers; this module reads them and writes the short
+headline cards on the Overview page ("Price leader: price index 80", "Assortment gaps", ...). Each insight has a
+tone (good / warn / bad / info) that the frontend maps to a colour, a title and a body that may contain **bold**
+and *italic* markers (the frontend renders them).
+
+Called by app.core.pipeline.analysis(). Contains no calculations of its own beyond simple counts and extremes.
+"""
 from __future__ import annotations
 
 import pandas as pd
@@ -8,13 +16,18 @@ from app.core import analytics as an
 
 def build_insights(ours: pd.DataFrame, comps: pd.DataFrame, pairs: pd.DataFrame, cats: pd.DataFrame,
                    our_name: str, comp_name: str) -> list[dict]:
-    """Each insight: {tone: good|warn|bad|info, title, body}."""
+    """Return a list of insights, each {tone: good|warn|bad|info, title, body}, ordered by importance.
+
+    Pair-based insights (price position, biggest gap, churn risk, category contrast) appear only when there are
+    matches; catalogue-wide insights (category gaps, assortment, discounting) use every product and always appear.
+    """
     out: list[dict] = []
     k = an.kpis(pairs)
 
     if k["n"]:
         verdict, tone = an.price_verdict(k["price_index"])
         direction = "above" if k["price_index"] > 100 else "below"
+        # price_verdict() uses "neutral"; the UI palette calls that tone "info".
         out.append({"tone": {"good": "good", "neutral": "info", "warn": "warn", "bad": "bad"}[tone],
                     "title": f"{verdict}: price index {k['price_index']:.0f}",
                     "body": (f"Across {k['n']} matched products {our_name} is on average "
@@ -29,6 +42,7 @@ def build_insights(ours: pd.DataFrame, comps: pd.DataFrame, pairs: pd.DataFrame,
                              f"**{top.comp_name}** (${top.comp_price:,.2f}) — a ${abs(top['diff']):,.2f} difference. "
                              f"Match confidence {top.score:.0f}/100 ({top.match_type}).")})
 
+        # Highest-risk case: customers pay more AND the competing product has better reviews.
         pricier = pairs[pairs.position == "Pricier"]
         if len(pricier):
             worse = int((pricier.rating_diff < 0).sum())
@@ -43,14 +57,16 @@ def build_insights(ours: pd.DataFrame, comps: pd.DataFrame, pairs: pd.DataFrame,
                         "body": (f"On matched items you are most competitive in **{by_cat.index[0]}** "
                                  f"({by_cat.iloc[0]:+.1f}% avg) and least in **{by_cat.index[-1]}** "
                                  f"({by_cat.iloc[-1]:+.1f}% avg).")})
+        # Be upfront about statistical weight: a handful of pairs gives direction, not proof.
         if k["n"] < 20:
             out.append({"tone": "info", "title": "Small matched sample",
                         "body": (f"Only {k['n']} pairs ({k['n_equivalent']} exact-model) — product-level conclusions are "
                                  f"directional. The *Categories & Brands* and *Market benchmark* views use every product, not just matches.")})
     else:
         out.append({"tone": "warn", "title": "No product matches at current settings",
-                    "body": "Lower the minimum match score or enable more match types in Filters."})
+                    "body": "Set Filters → Match reliability to “All matches”, or widen the category selection."})
 
+    # Catalogue-wide view (independent of how many pairs matched): spread of category price gaps.
     both = cats[cats.coverage == "Both"].dropna(subset=["median_gap_pct"])
     if len(both):
         hi, lo = both.loc[both.median_gap_pct.idxmax()], both.loc[both.median_gap_pct.idxmin()]
@@ -58,6 +74,7 @@ def build_insights(ours: pd.DataFrame, comps: pd.DataFrame, pairs: pd.DataFrame,
                     "body": (f"Median price gap vs competitor ranges from **{lo.median_gap_pct:+.0f}% in {lo.category}** "
                              f"to **{hi.median_gap_pct:+.0f}% in {hi.category}**.")})
 
+    # Assortment: categories only one store sells = products you could add / your differentiators.
     only_comp = cats[cats.coverage == "Only competitor"]
     only_us = cats[cats.coverage == "Only you"]
     if len(only_comp):

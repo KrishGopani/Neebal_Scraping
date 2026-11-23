@@ -1,45 +1,46 @@
+/**
+ * The "Filters" drawer — the business-facing controls that shape every number in the dashboard.
+ *
+ * Opened from the Filters button in Layout.tsx. Each control writes into the Settings context (src/lib/settings.tsx); changing
+ * one changes the query key in src/lib/queries.ts, so all pages refetch and update immediately. Controls:
+ *   Match reliability (which product matches to trust), Compare post-discount prices, Price tolerance, Category scope.
+ */
 import { RotateCcw } from 'lucide-react'
 import { Drawer } from './Drawer'
-import { Button, Pills, Segmented, Select, Slider, Toggle } from './ui'
-import { useSettings } from '../lib/settings'
+import { Button, Pills, Segmented, Slider, Toggle } from './ui'
+import { useSettings, type Settings } from '../lib/settings'
 import { useMeta } from '../lib/queries'
 
-const H = ({ children }: { children: string }) => <h4 className="mb-1 mt-5 text-[11px] font-semibold uppercase tracking-wider text-muted first:mt-0">{children}</h4>
+// Small section heading with optional helper text.
+const H = ({ children, hint }: { children: string; hint?: string }) => (
+  <div className="mb-2 mt-6 first:mt-0"><h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</h4>{hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}</div>
+)
+// UI label -> backend `min_confidence` value. "All matches" keeps every pair; "High only" keeps just same-model matches.
+const RELIABILITY = { 'All matches': 'Low', 'Medium & high': 'Medium', 'High only': 'High' } as const
 
+/** The drawer UI. Renders nothing until /api/meta has loaded (it needs the category list). */
 export function SettingsPanel() {
   const { settings: s, set, reset, open, setOpen } = useSettings()
   const { data: meta } = useMeta()
   if (!meta) return null
-  const names = Object.fromEntries(meta.sources.map(x => [x.key, x.name]))
-  const byName = Object.fromEntries(meta.sources.map(x => [x.name, x.key]))
+  // Reverse lookup: which label corresponds to the stored value, so the right segment is highlighted.
+  const label = Object.entries(RELIABILITY).find(([, v]) => v === s.min_confidence)![0] as keyof typeof RELIABILITY
   return (
-    <Drawer open={open} onClose={() => setOpen(false)} title="Analysis settings">
-      <H>Perspective</H>
-      <p className="mb-2 text-xs text-muted">Choose the store whose prices you want to benchmark. The other store is the competitor.</p>
-      <Segmented options={meta.sources.map(x => x.name)} value={names[s.ours]} onChange={n => set({ ours: byName[n] })} />
+    <Drawer open={open} onClose={() => setOpen(false)} title="Filters">
+      {/* Match reliability: trade quantity of matches for like-for-like quality. */}
+      <H hint="Which product matches to trust. Fewer matches, but more like-for-like.">Match reliability</H>
+      <Segmented options={Object.keys(RELIABILITY) as (keyof typeof RELIABILITY)[]} value={label} onChange={k => set({ min_confidence: RELIABILITY[k] as Settings['min_confidence'] })} size="sm" />
 
-      <H>Data snapshot</H>
-      <Select className="w-full" value={String(s.snapshot ?? meta.snapshots[0]?.snapshot_id)} onChange={v => set({ snapshot: Number(v) === meta.snapshots[0]?.snapshot_id ? null : Number(v) })}
-        options={meta.snapshots.map(x => ({ value: String(x.snapshot_id), label: `#${x.snapshot_id} · ${x.scraped_at.replace('T', ' ').slice(0, 16)} · ${x.n_products} products` }))} />
-
-      <H>Product matching</H>
-      <Slider label="Minimum match score" hint="Higher = fewer, more reliable matches." value={s.min_score} min={40} max={90} step={5} onChange={v => set({ min_score: v })} />
-      <div className="py-1.5">
-        <div className="mb-1.5 text-sm font-medium">Match types</div>
-        <Pills options={meta.match_types} value={s.types} onChange={v => set({ types: v })} />
-      </div>
-      <Toggle label="One-to-one matching" hint="Each competitor product matches at most one of yours." checked={s.one_to_one} onChange={v => set({ one_to_one: v })} />
-      <Slider label="Max plausible price ratio" hint="Drops pairs whose prices differ by more than this multiple — likely different product classes." value={s.max_ratio} min={2} max={20} step={0.5} onChange={v => set({ max_ratio: v })} format={v => `${v}×`} />
-
+      {/* Pricing basis (headline vs after-discount) and the tolerance within which a gap counts as "at par". */}
       <H>Pricing</H>
-      <Toggle label="Use post-discount prices" hint="Compare what shoppers actually pay after listed discounts." checked={s.effective} onChange={v => set({ effective: v })} />
-      <Slider label="“At par” tolerance" value={s.tol} min={0} max={10} step={0.5} onChange={v => set({ tol: v })} format={v => `±${v}%`} />
+      <Toggle label="Compare post-discount prices" hint="Use what shoppers actually pay after listed discounts, not headline prices." checked={s.effective} onChange={v => set({ effective: v })} />
+      <Slider label="Price tolerance" hint="Gaps within this range count as “at par”." value={s.tol} min={0} max={10} step={0.5} onChange={v => set({ tol: v })} format={v => `±${v}%`} />
 
-      <H>Category scope</H>
-      <p className="mb-2 text-xs text-muted">{s.scope.length ? `${s.scope.length} selected` : 'All categories'} — click to narrow.</p>
+      {/* Category scope: empty selection = all categories; picking some narrows every page to them. */}
+      <H hint={s.scope.length ? `${s.scope.length} selected` : 'All categories — click to narrow.'}>Categories</H>
       <Pills options={meta.categories} value={s.scope} onChange={v => set({ scope: v })} />
 
-      <Button className="mt-6 w-full" onClick={reset}><RotateCcw size={14} /> Reset to defaults</Button>
+      <Button className="mt-8 w-full" onClick={reset}><RotateCcw size={14} /> Reset filters</Button>
     </Drawer>
   )
 }

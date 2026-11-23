@@ -1,3 +1,14 @@
+/**
+ * The application shell shown around every page: left sidebar (navigation), top bar (title, Filters, Run scrape, theme), and
+ * the page area. It also owns the app-wide data loading.
+ *
+ * How it fits together:
+ *   - Called by the router in App.tsx as the parent route; the active page renders in <Outlet />.
+ *   - Fetches the analysis once (useAnalysisQuery) and shares it with all pages via <AnalysisCtx.Provider>, so a page only
+ *     renders when data is ready and never handles loading itself.
+ *   - Shows the right state: loading skeleton, "no data yet" (with a first-scrape button), error, or the page.
+ *   - Hosts the Filters drawer (SettingsPanel) and the scrape button.
+ */
 import { NavLink, Outlet } from 'react-router-dom'
 import { BadgeDollarSign, Database, Layers, LayoutDashboard, Link2, Loader2, Moon, RefreshCw, SlidersHorizontal, Star, Sun, Target, TrendingUp } from 'lucide-react'
 import { Button, EmptyState, Skeleton } from './ui'
@@ -7,6 +18,7 @@ import { changedCount, useSettings } from '../lib/settings'
 import { useTheme } from '../lib/theme'
 import { cn } from '../lib/utils'
 
+/** Sidebar/mobile navigation entries: URL path, label, icon. Order here is the order shown. */
 const NAV = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
   { to: '/matches', label: 'Product Matches', icon: Link2 },
@@ -15,10 +27,15 @@ const NAV = [
   { to: '/actions', label: 'Gaps & Actions', icon: Target },
   { to: '/quality', label: 'Quality & Value', icon: Star },
   { to: '/market', label: 'Market & Trends', icon: TrendingUp },
-  { to: '/data', label: 'Data & Method', icon: Database },
+  { to: '/catalogue', label: 'Catalogue', icon: Database },
 ]
 
+/**
+ * "Run scrape" button. Starts the background scrape (useScrape) and, while running, shows the status message and percentage;
+ * shows "Scrape failed" if the last job errored. `primary` styles it as the main call-to-action on the empty state.
+ */
 function ScrapeButton({ primary }: { primary?: boolean }) {
+  // Scrape job state + start function from src/lib/queries.ts (it polls the backend while a job runs).
   const { job, running, start } = useScrape()
   return (
     <div className="flex items-center gap-2">
@@ -32,16 +49,23 @@ function ScrapeButton({ primary }: { primary?: boolean }) {
   )
 }
 
+/** Page frame + app-wide data loading (see file header). */
 export function Layout() {
   const { isDark, toggle } = useTheme()
   const { settings, setOpen } = useSettings()
   const meta = useMeta()
+  // The main data query. `a` below is its data (undefined until the first load).
   const q = useAnalysisQuery()
+  // Number of active filters, shown as the badge on the Filters button.
   const n = changedCount(settings)
   const a = q.data
 
   return (
     <div className="flex min-h-full">
+      {/*
+         Desktop sidebar (hidden below the `lg` breakpoint, where the horizontal mobile nav further down is used instead).
+         It also shows which scrape snapshot the numbers come from.
+      */}
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-surface lg:flex">
         <div className="flex items-center gap-2.5 px-5 py-5">
           <div className="grid h-8 w-8 place-items-center rounded-lg bg-brand text-white dark:text-slate-900"><TrendingUp size={18} strokeWidth={2.6} /></div>
@@ -65,6 +89,7 @@ export function Layout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* Top bar: "<your store> benchmarked against <competitor>", Filters button (with active-filter badge), Run scrape, theme toggle. */}
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface/85 px-4 py-3 backdrop-blur lg:px-8">
           <div className="min-w-0 flex-1">
             {a ? (
@@ -90,7 +115,13 @@ export function Layout() {
           ))}
         </nav>
 
+        {/*
+           Page area. Exactly one of these states is shown: (1) first load -> skeleton, (2) no scrape data yet -> empty state with a scrape button,
+           (3) request failed -> error message, (4) normal -> the current page via <Outlet /> inside the AnalysisCtx provider.
+           While refetching after a filter change the page stays visible but dimmed (placeholderData keeps the old data).
+        */}
         <main className="mx-auto w-full max-w-[1480px] flex-1 px-4 py-6 lg:px-8">
+          {/* State selection (see the note above <main>). */}
           {meta.isLoading || (q.isLoading && meta.data?.has_data !== false) ? (
             <div className="space-y-4"><Skeleton className="h-24" /><div className="grid grid-cols-2 gap-4 lg:grid-cols-5">{[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24" />)}</div><Skeleton className="h-80" /></div>
           ) : meta.data && !meta.data.has_data ? (

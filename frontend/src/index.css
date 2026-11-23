@@ -1,6 +1,21 @@
+/*
+   Global styles and design tokens.
+   
+   Tailwind CSS v4 is configured right here (no tailwind.config.js):
+     1. `:root` / `.dark` define raw colour variables (--bg, --surface, --fg ...) for the light and dark themes.
+     2. `@theme` exposes them as Tailwind colours, so components can write `bg-surface`, `text-muted`,
+        `border-line`, `text-good` ... and the colour switches automatically when <html> has the `dark` class
+        (toggled by src/lib/theme.tsx). Components therefore rarely need `dark:` variants.
+     3. A few tiny utility classes (.tabular, .skeleton) that Tailwind doesn't provide.
+*/
 @import "tailwindcss";
+/* Lets Tailwind's `dark:` prefix work off the `.dark` class on <html> (instead of the OS setting). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+   Design tokens -> Tailwind utilities. `--color-surface: var(--surface)` creates classes like bg-surface/text-surface.
+   `ours` (blue) and `comp` (amber) are the fixed brand colours for "your store" vs "competitor" everywhere.
+*/
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --color-bg: var(--bg);
@@ -21,22 +36,28 @@
   --color-comp: #f59e0b;
 }
 
+/* Light theme values. */
 :root {
   --bg: #f6f8fb; --surface: #ffffff; --subtle: #f1f5f9; --line: #e2e8f0; --fg: #0f172a; --muted: #64748b;
   --brand: #2563eb; --brand-soft: #eff6ff;
   --good: #16a34a; --good-soft: #ecfdf5; --bad: #dc2626; --bad-soft: #fef2f2; --warn: #d97706; --warn-soft: #fffbeb;
 }
+/* Dark theme values: same variable names, different colours. */
 .dark {
   --bg: #0b1120; --surface: #111a2e; --subtle: #17223b; --line: #24304a; --fg: #e6edf7; --muted: #8fa0ba;
   --brand: #60a5fa; --brand-soft: #14284d;
   --good: #34d399; --good-soft: #0d2a22; --bad: #f87171; --bad-soft: #301418; --warn: #fbbf24; --warn-soft: #2f2410;
 }
 
+/* Make the app fill the viewport so the sidebar/main layout can stretch full height. */
 html, body, #root { height: 100%; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 
+/* Native range sliders (used by <Slider>) pick up the brand colour and fill their container. */
 input[type="range"] { accent-color: var(--brand); width: 100%; }
+/* Fixed-width digits so columns of numbers line up (used on prices and percentages). */
 .tabular { font-variant-numeric: tabular-nums; }
+/* Loading placeholder (<Skeleton>): a light band sweeping across a grey block. */
 @keyframes shimmer { 0% { background-position: -400px 0 } 100% { background-position: 400px 0 } }
 .skeleton { background: linear-gradient(90deg, var(--subtle) 25%, var(--line) 37%, var(--subtle) 63%); background-size: 800px 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }

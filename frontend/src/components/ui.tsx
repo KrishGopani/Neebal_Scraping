@@ -1,13 +1,24 @@
+/**
+ * The app's small design-system: reusable presentational components (no data fetching in here).
+ *
+ * Everything pages need to look consistent lives in this one file: Card, Badge, Button, KpiCard, InsightCard, form controls
+ * (Toggle, Slider, Segmented, Select, Pills), small display helpers (ScoreBar, Stars, Skeleton, EmptyState) and layout helpers
+ * (PageHeader, Grid). They are styled with Tailwind classes that use the theme tokens from src/index.css, so they adapt to
+ * light/dark mode automatically.
+ */
 import { Fragment, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { cn } from '../lib/utils'
 import type { Tone } from '../lib/api'
 
+// Tone -> background + text colour classes (soft tinted background, saturated text). Used by Badge and InsightCard.
 const TONE: Record<string, string> = {
   good: 'bg-good-soft text-good', bad: 'bg-bad-soft text-bad', warn: 'bg-warn-soft text-warn',
   info: 'bg-brand-soft text-brand', neutral: 'bg-subtle text-muted',
 }
+// Tone -> left-border colour for InsightCard.
 const ACCENT: Record<string, string> = { good: 'border-good', bad: 'border-bad', warn: 'border-warn', info: 'border-brand', neutral: 'border-line' }
 
+/** White rounded panel with an optional header (title, subtitle, right-aligned `actions`). The basic container for every chart/table. */
 export function Card({ title, subtitle, actions, children, className, bodyClass }: {
   title?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; bodyClass?: string
 }) {
@@ -27,12 +38,16 @@ export function Card({ title, subtitle, actions, children, className, bodyClass 
   )
 }
 
+/** Small rounded label ("Cheaper", "High", ...) tinted by `tone`. */
 export function Badge({ tone = 'neutral', children, className }: { tone?: Tone | string; children: ReactNode; className?: string }) {
   return <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap', TONE[tone], className)}>{children}</span>
 }
+/** Map a price position to a badge tone: Cheaper = good (green), Pricier = bad (red), At par = neutral. */
 export const positionTone = (p: string): Tone => (p === 'Cheaper' ? 'good' : p === 'Pricier' ? 'bad' : 'neutral')
+/** Map a match confidence to a badge tone: High = green, Medium = blue, Low = amber. */
 export const confidenceTone = (c: string): Tone => (c === 'High' ? 'good' : c === 'Medium' ? 'info' : 'warn')
 
+/** Standard button. `variant`: primary (filled brand colour) | secondary (outlined, default) | ghost (text only). `size`: sm | md. */
 export function Button({ variant = 'secondary', size = 'md', className, ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost'; size?: 'sm' | 'md' }) {
   return (
     <button
@@ -49,7 +64,9 @@ export function Button({ variant = 'secondary', size = 'md', className, ...p }: 
   )
 }
 
+/** Headline number tile: small caps label, big value, optional sub-text and icon. `tone` colours the value (green/red/amber). */
 export function KpiCard({ label, value, sub, tone, icon }: { label: string; value: ReactNode; sub?: ReactNode; tone?: Tone | ''; icon?: ReactNode }) {
+  // Only the number is coloured; the card chrome stays neutral so a row of KPIs doesn't look noisy.
   const color = tone === 'good' ? 'text-good' : tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-fg'
   return (
     <div className="rounded-2xl border border-line bg-surface p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
@@ -62,8 +79,13 @@ export function KpiCard({ label, value, sub, tone, icon }: { label: string; valu
   )
 }
 
-/** **bold** / *italic* -> React nodes (server insight text uses light markdown). */
+/**
+ * Render a string containing **bold** and *italic* markers as React nodes (<strong>/<em>).
+ * The backend's insight text uses this light markdown; a full markdown library would be overkill, and rendering real elements
+ * (instead of injecting HTML) keeps it safe from injection.
+ */
 export function Md({ text }: { text: string }) {
+  // split() with a capturing group keeps the **...** / *...* tokens in the result so we can style them.
   const parts = text.split(/(\*\*.+?\*\*|\*.+?\*)/g)
   return (
     <>
@@ -73,6 +95,7 @@ export function Md({ text }: { text: string }) {
     </>
   )
 }
+/** Coloured callout showing one backend-generated business insight (title + sentence), tinted by its tone. */
 export function InsightCard({ tone, title, body }: { tone: Tone; title: string; body: string }) {
   return (
     <div className={cn('rounded-xl border-l-4 p-4 text-sm leading-relaxed', TONE[tone], ACCENT[tone])}>
@@ -82,6 +105,7 @@ export function InsightCard({ tone, title, body }: { tone: Tone; title: string; 
   )
 }
 
+/** On/off switch with a label and optional helper text (accessible role="switch"). */
 export function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (
     <label className="flex cursor-pointer items-start justify-between gap-3 py-1.5">
@@ -94,6 +118,7 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
   )
 }
 
+/** Labelled range slider showing its current value (formatted by `format`). A thin wrapper over the native <input type=range>. */
 export function Slider({ label, hint, value, min, max, step = 1, onChange, format }: {
   label: string; hint?: string; value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string
 }) {
@@ -108,6 +133,7 @@ export function Slider({ label, hint, value, min, max, step = 1, onChange, forma
   )
 }
 
+/** Compact segmented control (like tabs) for choosing exactly one of a few options. */
 export function Segmented<T extends string>({ options, value, onChange, size = 'md' }: { options: readonly T[]; value: T; onChange: (v: T) => void; size?: 'sm' | 'md' }) {
   return (
     <div className="inline-flex rounded-lg bg-subtle p-0.5">
@@ -121,7 +147,9 @@ export function Segmented<T extends string>({ options, value, onChange, size = '
   )
 }
 
+/** Styled native dropdown. `options` may be plain strings or {value,label} pairs; both are normalised below. */
 export function Select({ value, onChange, options, className }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] | string[]; className?: string }) {
+  // Normalise: a string 'X' becomes { value: 'X', label: 'X' }.
   const opts = (options as (string | { value: string; label: string })[]).map(o => (typeof o === 'string' ? { value: o, label: o } : o))
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
@@ -131,7 +159,10 @@ export function Select({ value, onChange, options, className }: { value: string;
   )
 }
 
-/** Toggle-able pills for multi-select (match types, positions, categories). */
+/**
+ * Multi-select as a row of toggle-able pills (click to add/remove). Used for position/confidence filters and the
+ * category scope. Selected pills get the brand tint; `tone` can add a per-option extra class.
+ */
 export function Pills({ options, value, onChange, tone }: { options: readonly string[]; value: string[]; onChange: (v: string[]) => void; tone?: (o: string) => string }) {
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -148,7 +179,9 @@ export function Pills({ options, value, onChange, tone }: { options: readonly st
   )
 }
 
+/** Tiny horizontal bar + number for a 0-100 score; green >= 75, blue >= 60, otherwise amber. */
 export function ScoreBar({ value }: { value: number }) {
+  // Bar colour thresholds.
   const c = value >= 75 ? 'bg-good' : value >= 60 ? 'bg-brand' : 'bg-warn'
   return (
     <div className="flex items-center gap-2">
@@ -157,22 +190,27 @@ export function ScoreBar({ value }: { value: number }) {
     </div>
   )
 }
+/** Five-star rating display (rounded to whole stars) with the numeric value; shows "—" when there is no rating. */
 export const Stars = ({ r }: { r: number | null | undefined }) =>
   r == null ? <span className="text-muted">—</span> : <span className="whitespace-nowrap text-warn">{'★'.repeat(Math.round(r))}<span className="opacity-30">{'★'.repeat(5 - Math.round(r))}</span><span className="ml-1 text-xs text-muted">{r.toFixed(1)}</span></span>
 
+/** Page title + subtitle row with an optional actions slot on the right. */
 export const PageHeader = ({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) => (
   <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div><h1 className="text-xl font-bold tracking-tight">{title}</h1>{subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}</div>
     {actions}
   </div>
 )
+/** Grey shimmering placeholder block shown while data loads (animation defined in index.css). */
 export const Skeleton = ({ className }: { className?: string }) => <div className={cn('skeleton', className)} />
+/** Dashed-border message box for "nothing to show" situations, with optional explanatory children. */
 export const EmptyState = ({ title, children }: { title: string; children?: ReactNode }) => (
   <div className="rounded-2xl border border-dashed border-line bg-surface px-6 py-12 text-center">
     <div className="text-base font-semibold">{title}</div>
     {children && <div className="mx-auto mt-1 max-w-md text-sm text-muted">{children}</div>}
   </div>
 )
+/** Responsive CSS grid helper. `cols` = number of columns on large screens (1 column on phones, 2 for 4-5 col layouts). */
 export const Grid = ({ cols = 2, children, className }: { cols?: 1 | 2 | 3 | 4 | 5; children: ReactNode; className?: string }) => (
   <div className={cn('grid gap-4', { 1: 'grid-cols-1', 2: 'grid-cols-1 lg:grid-cols-2', 3: 'grid-cols-1 lg:grid-cols-3', 4: 'grid-cols-2 lg:grid-cols-4', 5: 'grid-cols-2 lg:grid-cols-5' }[cols], className)}>{children}</div>
 )
